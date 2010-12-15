@@ -1,0 +1,13 @@
+Package: nea
+Type: Package
+Title: Network Enrichment Analysis
+Version: 0.1.0
+Date: 2010-12-12
+Author: Florian Markowetz
+Maintainer: Florian Markowetz <florian@markowetzlab.org>
+Description: Enrichment of gene sets on networks.
+License: GPL (>=2)
+Depends: igraph
+Suggests: snow
+URL: http://www.markowetzlab.org
+LazyLoad: yes
