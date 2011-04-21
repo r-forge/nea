@@ -9,7 +9,7 @@ Spread hits over a network
 Spread hits over a network
 }
 \usage{
-spread.hits(g, h = 10, lambda = 1, distmethod = "shortest.paths", start.node = NULL, hitColor = "red", D = NULL)
+spread.hits(g, h = 10, lambda = 1, distmethod = "shortest.paths", start.node = NULL, hitColor = "red", D = NULL,binary=TRUE)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -34,6 +34,10 @@ spread.hits(g, h = 10, lambda = 1, distmethod = "shortest.paths", start.node = N
   \item{D}{
 %%     ~~Describe \code{D} here~~
 }
+  \item{binary}{
+%%     ~~Describe \code{D} here~~
+}
+
 }
 \details{
 %%  ~~ If necessary, more details than the description above ~~

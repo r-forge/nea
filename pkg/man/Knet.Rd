@@ -1,7 +1,7 @@
 \name{Knet}
 \alias{Knet}
 \alias{Knet.fct}
-\alias{plot.Knet}
+\alias{plotKnet}
 %- Also NEED an '\alias' for EACH other topic documented here.
 \title{
 K-function on networks

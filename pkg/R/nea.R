@@ -19,7 +19,7 @@ create.network <- function(n=100,type="barabasi", edge.weights=NULL,...){
 	if(!type%in%c("barabasi","erdos.renyi","grid")) stop("Input 'type' unknown: Stop feeding me crap!")
 	##
 	g <- switch(type,
-		barabasi    = barabasi.game(n,directed=FALSE, ...),
+		barabasi    = barabasi.game(n,m=2,directed=FALSE, ...),
 		erdos.renyi = erdos.renyi.game(n,p.or.m=(2*n-2*floor(sqrt(n))),type="gnm",directed=FALSE,...), ## ~nr of edges of grid
 		grid        = create.grid(n)	
 		)
@@ -48,7 +48,8 @@ generator <- function(g){
 
 
 ## Diffusion Kernels on Graphs and Other Discrete Structures, Kondor and Lafferty, 2002
-graph.diffusion <- function(g,beta=1,correctNeg=TRUE){
+graph.diffusion <- function(g,beta=1,v=V(g),correctNeg=TRUE){
+		if (class(v)!="igraph.vs") v <- my.as.igraph.vs(v-1)
 		H <- generator(g)
 		x <- eigen(H) ## H ~ x$vectors %*% diag(x$values) %*% t(x$vectors)
 		K <- x$vectors %*% diag(exp(beta * x$values)) %*% t(x$vectors)
@@ -58,22 +59,26 @@ graph.diffusion <- function(g,beta=1,correctNeg=TRUE){
 			D2[D2<0] <- 0
 			}
 		D <- sqrt(D2)
-		dimnames(D) <- list(V(g),V(g))
+		K <- K[v+1,v+1]
+		D <- D[v+1,v+1]
+		dimnames(D) <- list(v,v)
 		return(list(kernel=K,dist=D))
 } ## end function graph.diffusion
 
 ## main distance function that interfaces to all others
-dist.graph <- function(g,method="shortest.paths",correctInf=TRUE,...){
-	##	
+dist.graph <- function(g,method=c("shortest.paths","diffusion"),v=V(g),correctInf=TRUE,...){
+	method <- match.arg(method)
+  if (class(v)!="igraph.vs") v <- my.as.igraph.vs(v-1)
+	##
 	D <- switch(method,
-		##floyd.warshall = floyd.warshall.all.pairs.sp(igraph.to.graphNEL(g)),
-		shortest.paths = shortest.paths(g, ...),
-		diffusion      = graph.diffusion(g, ...)$dist
-	)
+		shortest.paths = shortest.paths(g, v=v, ...)[,v+1],
+		diffusion      = graph.diffusion(g, v=v, ...)$dist
+		)
 	##
-	if (correctInf) D[D==Inf] <- max(D[D!=Inf])+1  ## D=Inf happens if there are unconnected nodes
+	if (correctInf) D[D==Inf] <- 2*max(D[D!=Inf])  ## D=Inf happens if there are unconnected nodes
 	##
-	dimnames(D) <- list(V(g),V(g))
+	#browser()
+	dimnames(D) <- list(v,v)
 	return(D)
 	##
 } ## end function dist.graph
@@ -88,7 +93,8 @@ spread.hits <- function(g,
 						distmethod="shortest.paths",
 						start.node=NULL,
 						hitColor="red",
-						D = NULL
+						D = NULL,
+						binary=TRUE
 						){
 	##
 	if (class(g)!="igraph")  stop("Input 'g' is not a graph: Stop feeding me crap!")
@@ -104,7 +110,8 @@ spread.hits <- function(g,
 	sampled <- c(start.node,sample(as.character(V(g)),size=h-1,prob=prob)) ## start.node plus h-1 others
 	sampled <- as.numeric(sampled)
 	##
-	V(g)[sampled]$hits <- 1
+	if (binary){ pheno <- 1 } else { pheno <- abs(rnorm(h)) }
+	V(g)[sampled]$hits  <- pheno
 	V(g)[sampled]$color <- hitColor
 	##
 	
@@ -119,49 +126,68 @@ spread.hits <- function(g,
 ##
 
 ## discrete and weighted hits
-Knet.fct <- function(g,distmethod="shortest.paths",D=NULL,node.contributions=FALSE,phenotype="hits",nsteps=100,nTopNodes=10,colorTopNodes="red4"){
+Knet.fct <- function(g,distmethod="shortest.paths",D=NULL,node.contributions=FALSE,phenotype="hits",nsteps=100,nTopNodes=10,colorTopNodes="red4",individual=TRUE){
 	
 	##
 	pheno  <- get.vertex.attribute(g,phenotype) ## phenotypes as specified by user
-	if (is.null(pheno)) stop("no phenotype in graph!")
+  if (is.null(pheno)) stop("no phenotype in graph!")
 	if (!is.numeric(pheno)){ 
 		warning("phenotype converted to numeric")
 		pheno <- as.numeric(pheno)
 	}
+	if (any(pheno < 0)){
+		warning("phenotype mustn't be < 0. Absolute value used.")
+		pheno <- abs(pheno)
+		}
 	
 	## setup:
-	hits   <- (pheno != 0) & !is.na(pheno) ## 0's and NA's are no hits
+	hits   <- which((pheno != 0) & !is.na(pheno)) ## 0's and NA's are no hits
 	phits  <- pheno[hits]                  ## non-zero phenotypes
-	nhits  <- sum(pheno,na.rm=TRUE)        ## complete phenotype
+	nhits  <- length(hits)                 ## how many nodes have phenotype != 0
+	thits  <- sum(pheno)                   ## total phenotype: same as nhits for binary phenotype
 	nnodes <- vcount(g)                    ## number of nodes
+	vhits  <- my.as.igraph.vs(hits - 1,g)		
 	
 	## compute graph distance:
-	if (is.null(D)) D <- dist.graph(g,method=distmethod)
-	if (vcount(g)!=ncol(D) || ncol(D) !=nrow(D)) stop("Distance matrix D must be square with nrow(D)=vcount(g)")
-	D.hits <- D[hits,hits]
-	
+	if (is.null(D)){ 
+      #D.hits <- dist.graph(g,method=distmethod,v=vhits) 
+      D <- dist.graph(g,method=distmethod)
+      D.hits <- D[hits,hits]
+    } else {
+	  if (ncol(D)==vcount(g) && ncol(D)==nrow(D)) { 
+      D.hits <- D[hits,hits] 
+      } else {
+        if (ncol(D)==nhits && ncol(D) ==nrow(D)) {
+          D.hits <- D
+          } else {
+          stop("Distance matrix D must be square with either nrow(D)=vcount(g) or nrow(D)= number of phenotypes not zero")
+        } ## END if (ncol(D)==nhits && ncol(D) ==nrow(D))
+      } ## END if (ncol(D)==vcount(g) && ncol(D)==nrow(D))
+    } ## END if (is.null(D))
+  
 	## compute K:
-	breaks <- seq(from=0,to=max(D),length.out=min(nsteps,max(D)+1))
-	S <- sumInDistBins(D.hits,phits,breaks)		
-	Z <- nhits * (nhits/nnodes) ## normalizing constant
-	K <- 1/Z * S                ## K-stat on graphs
-	
-	## normalize K to lie in [0,1]
-	theo.max <- (nnodes * (nhits^2 - nhits))/nhits^2
-	if (round(max(K),2) != round(theo.max,2)) warning("theoretical max not observed max")
-	K       <- K/theo.max
-	AUK     <- sum(K)/length(K)
-	
+	lo  <- ifelse(distmethod=="shortest.paths",min(nsteps,max(D)+1),nsteps)
+	breaks <- seq(from=0,to=max(D),length.out=lo)
+	S   <- sumInDistBins(D.hits,phits,breaks) ## sum_i sum_{i \not= j}
+	Z   <- nhits*thits - thits		           ## normalizing constant
+	K   <- 1/Z * S                            ## K-stat on graphs
+	if (round(max(K),2) != 1) warning("K-function doesn't have max of 1")
+	AUK <- sum(K)/length(K)
+		
 	## compute individual node contributions
-	nodeK   <- apply(D.hits,1,function(x) sumInDistBins(x,phits,breaks,normalize=TRUE))
-	nodeAUK <- apply(nodeK,2,function(x)sum(x)/length(x))
-	
-	##
-	if (is.null(V(g)$shape)) V(g)$shape="circle"
-	if (is.null(V(g)$color)) V(g)$color="white"
-	topNodes <- as.numeric(names(sort(nodeAUK,decreasing=TRUE)[1:min(nhits,nTopNodes)]))+1
-	V(g)$shape[topNodes] <- "rectangle"
-	V(g)$color[topNodes] <- colorTopNodes
+	if (individual){
+		nodeK   <- apply(D.hits,1,function(x) sumInDistBins(x,phits,breaks,normalize=TRUE))
+		nodeAUK <- apply(nodeK ,2,function(x) sum(x)/length(x))
+		##
+		if (is.null(V(g)$shape)) V(g)$shape="circle"
+		if (is.null(V(g)$color)) V(g)$color="white"
+		topNodes <- as.numeric(names(sort(nodeAUK,decreasing=TRUE)[1:min(nhits,nTopNodes)]))+1
+		V(g)$shape[topNodes] <- "rectangle"
+		V(g)$color[topNodes] <- colorTopNodes
+	} else {
+		nodeK   <- NA
+		nodeAUK <- NA	
+	}
 	
 	##	
 	return(list(graph=g,K=K,AUK=AUK,nodeK=nodeK,nodeAUK=nodeAUK))
@@ -170,19 +196,14 @@ Knet.fct <- function(g,distmethod="shortest.paths",D=NULL,node.contributions=FAL
 
 sumInDistBins <- function(D,phits,breaks,normalize=FALSE){
 	times <- ifelse(is.null(nrow(D)),1,nrow(D)) 
-	S0 <- tapply(rep(phits,times),cut(D,breaks),FUN=sum) ## hits in each distance bin
+	S0 <- tapply(rep(phits,times),cut(D,breaks),FUN=sum) ## hits in each distance bin, returns NA for D==0
 	S <- cumsum(ifelse(is.na(S0),0,S0))
 	if (normalize) S <- S/max(S)		
 	return(S)
 } ## end function sumInDistBins
 
 ##
-##
-##
-permute.hits <- function(g,phenotype="hits") set.vertex.attribute(g,name=phenotype,value=sample(get.vertex.attribute(g,phenotype)))
-
-##
-##
+## MAIN function
 ##
 Knet <- function(	g,
 					nperm=100,
@@ -195,17 +216,19 @@ Knet <- function(	g,
 				){
 	##
 	if (verbose) cat("Computing distances on graph\n")
-	D <- dist.graph(g,method=distmethod)
-	K <- Knet.fct(g,distmethod=distmethod,phenotype=phenotype,D=D,...)
-	K.obs <- K$K
+  pheno   <- my.as.igraph.vs(which(get.vertex.attribute(g,phenotype) != 0)-1,g)
+	#D       <- dist.graph(g,method=distmethod,v=pheno)
+  D       <- dist.graph(g,method=distmethod)
+	K       <- Knet.fct(g,distmethod=distmethod,phenotype=phenotype,D=D,...)
+	K.obs   <- K$K
 	AUK.obs <- K$AUK
 	##
 	if (!is.null(nperm) && nperm>1){
 		if (verbose) cat(paste("Knet with",nperm,"permutations\n"))
 		if (verbose) if (nperm < 50) cat("Don't be shy! Try some more permutations next time ...\n")
 		if (is.null(parallel)){
-			if (verbose) cat("Running",nperm,"permutations\n")
-			K.perm <- sapply(1:nperm,function(i) Knet.fct(permute.hits(g,phenotype),phenotype=phenotype,D=D,...)$K)
+			#if (verbose) cat("Running",nperm,"permutations\n")
+			K.perm <- sapply(1:nperm,function(i) Knet.fct(permute.hits(g,phenotype),distmethod=distmethod,phenotype=phenotype,D=D,individual=FALSE,...)$K)
 		} else {
 			require(snow)
 			if (!is.wholenumber(parallel)) stop("Argument 'parallel' is not a whole number\n")
@@ -215,7 +238,7 @@ Knet <- function(	g,
 			clusterEvalQ(cl,library(nea))
 			##clusterExport(cl, c("g","D","phenotype")) 
 			if (verbose) cat("Running",nperm,"permutations on cluster\n")
-			K.perm <- parSapply(cl,1:nperm,function(i) Knet.fct(permute.hits(g,phenotype),phenotype=phenotype,D=D)$K)
+			K.perm <- parSapply(cl,1:nperm,function(i) Knet.fct(permute.hits(g,phenotype),distmethod=distmethod,phenotype=phenotype,D=D,individual=FALSE)$K)
 			stopCluster(cl)
 			}
 		K.quan <- apply(K.perm,1,function(x)quantile(x,prob=prob))
@@ -235,7 +258,7 @@ Knet <- function(	g,
 	##
 } ## end function Knet.permute
 
-plot.Knet <- function(x,...){ ## plot.Knet <- function(x,sequential=FALSE){
+plotKnet <- function(x,sequential=FALSE){ ## plot.Knet <- function(x,sequential=FALSE){
 	res <- x
 	##
 	if (!all(c("K.perm","K.quan","AUK.perm")%in%names(res))){
@@ -250,9 +273,10 @@ plot.Knet <- function(x,...){ ## plot.Knet <- function(x,sequential=FALSE){
 		##
 		if(!sequential) par(mfrow=c(1,2))
 		## plot 1
-		if (ncol(K.quan)==5) lty<-c("dotted","solid","solid","solid","dotted") else lty<-"solid"
-		matplot(t(K.quan),type="l",lty=lty,col="grey",lwd=c(2,1,3,1,2),xlab="Distance in network",ylab="K-function",main="Network enrichment analysis")
-		polygon(x=c(1:ncol(K.quan),ncol(K.quan):1),y=c(K.quan["5%",],rev(K.quan["95%",])),col="grey",density=20)
+		if (nrow(K.quan)==5) lty<-c("dotted","solid","solid","solid","dotted") else lty<-"solid"
+		plot(NA,ylim=c(0,1),xlim=c(0,ncol(K.quan)),xlab="Distance in network",ylab="Knet",main="Knet-function")
+		polygon(x=c(1:ncol(K.quan),ncol(K.quan):1),y=c(K.quan["0%",],rev(K.quan["100%",])),col="lightyellow",border=NA)
+		matlines(t(K.quan),type="l",lty=lty,col="grey",lwd=c(1,1,2,1,1))
 		lines(K.obs,col="red",lwd="3")
 		## plot 2
 		hist(AUK.perm,xlim=c(min(c(.4,min(AUK.perm))),1),col="grey",border="grey",xlab="Area under K-curve",main="AUK: observed v. permuted")
@@ -260,8 +284,58 @@ plot.Knet <- function(x,...){ ## plot.Knet <- function(x,sequential=FALSE){
 	}
 } ## end plot.Knet
 
+##
+## rank genes
+##
+rank.hits <- function(g,distmethod="shortest.paths",phenotype="hits"){
+	
+	## extract hits
+	hits <- V(g)[which(get.vertex.attribute(g,phenotype) > 0) - 1]
+	
+	## all those crazy scores
+	r0 <- Knet.fct(g,phenotype=phenotype,distmethod=distmethod,individual=TRUE)$nodeAUK
+	r1 <- degree(graph=g,v=hits)
+	r2 <- betweenness(graph=g,v=hits,directed=FALSE)
+	#r3 <- bonpow(graph=g,nodes=hits)
+	r4 <- constraint(graph=g,nodes=hits)
+	r5 <- evcent(graph=g)$vector[hits+1]
+	r6 <- page.rank(graph=g,vids=hits,directed=FALSE)$vector
+	r7 <- authority.score(graph=g)$vector[hits+1]
+	#r8 <- hub.score(graph=g)$vector[hits+1] 
+
+	## output
+	res <- data.frame(
+		Knet        = r0,
+		degree      = r1,
+		betweenness = r2,
+		#bonpow      = r3,
+		constraint  = r4,
+		evcent      = r5,
+		pagerank    = r6,
+		authority   = r7
+		#hub         = r8		
+	)
+	res <- res[order(res$Knet,decreasing=TRUE),]	
+	return(res)
+	} ## end fct rank.hits
+
 
 ####################################################################################
+## HELPER FUNCTIONS
+
+my.as.igraph.vs <- function(v,g){
+	if (class(v)=="igraph.vs") return(v)
+	class(v) <- "igraph.vs"            
+	ne <- new.env()
+	assign("graph", g, envir = ne)
+    attr(v, "env") <- ne
+	return(v)
+	}
+
+###
+permute.hits <- function(g,phenotype="hits") set.vertex.attribute(g,name=phenotype,value=sample(get.vertex.attribute(g,phenotype)))
+
+###
 read.delim.BioGRID <- function(path.to.BioGRID.tab.delim.file){
 	
 	## TO DO: use graph.data.frame
@@ -290,7 +364,7 @@ read.delim.BioGRID <- function(path.to.BioGRID.tab.delim.file){
 	return(g)
 	} ## end function read.BioGRID.graph
 
-
+###
 panel.cor <- function(x, y, digits=2, prefix="", cex.cor, scale.r=TRUE,...){
     usr <- par("usr"); on.exit(par(usr))
     par(usr = c(0, 1, 0, 1))
@@ -302,6 +376,7 @@ panel.cor <- function(x, y, digits=2, prefix="", cex.cor, scale.r=TRUE,...){
     text(0.5, 0.5, txt, cex = cex.r)
 }
 
+###
 panel.smoothscatter <- function (x, y, col = par("col"), bg = NA, pch = par("pch"),  cex = 1, col.smooth = "red", span = 2/3, iter = 3, ...) {
     smoothScatter(x,y,add=TRUE)
     #points(x, y, pch = pch, col = col, bg = bg, cex = cex)
@@ -310,6 +385,7 @@ panel.smoothscatter <- function (x, y, col = par("col"), bg = NA, pch = par("pch
         lines(stats::lowess(x[ok], y[ok], f = span, iter = iter), 
             col = col.smooth, ...)
 }
+
 
 ##
 ## put GO anno on vertexes
@@ -329,9 +405,9 @@ GOnodeAnno <- function(nodeNames,llim=10,ulim=300,envir){
 	return(res*1)
 	}
 
-get.all.vertex.attributes <- function(graph){
-	if (!is.igraph(graph)) stop("Not a graph object")
-	A <- as.data.frame(graph[[9]][[3]])
+get.all.vertex.attributes <- function(g){
+	if (!is.igraph(g)) stop("Not a graph object")
+	A <- as.data.frame(g[[9]][[3]])
 	if (is.null(V(g)$name)) rownames(A) <- 0:(vcount(g)-1) else rownames(A) <- V(g)$name
 	return(A)
 	}
@@ -354,5 +430,7 @@ my.mget <- function(x,envir){
 	}
 
 is.wholenumber <- function(x, tol = .Machine$double.eps^0.5)  abs(x - round(x)) < tol
+
+
 
 #

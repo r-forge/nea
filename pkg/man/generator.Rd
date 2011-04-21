@@ -7,6 +7,7 @@
 \alias{is.wholenumber}
 \alias{GOnodeAnno}
 \alias{read.delim.BioGRID}
+\alias{my.as.igraph.vs}
 %- Also NEED an '\alias' for EACH other topic documented here.
 \title{
 Small helper functions

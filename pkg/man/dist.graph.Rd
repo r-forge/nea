@@ -9,7 +9,7 @@ Distances on graph
 Distances on graphs
 }
 \usage{
-dist.graph(g, method = "shortest.paths", correctInf = TRUE, ...)
+dist.graph(g, method = "shortest.paths", v=V(g), correctInf = TRUE, ...)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -17,6 +17,9 @@ dist.graph(g, method = "shortest.paths", correctInf = TRUE, ...)
 %%     ~~Describe \code{g} here~~
 }
   \item{method}{
+%%     ~~Describe \code{method} here~~
+}
+  \item{v}{
 %%     ~~Describe \code{method} here~~
 }
   \item{correctInf}{
