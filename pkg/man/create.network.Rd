@@ -9,7 +9,7 @@ Create networks
 Create networks
 }
 \usage{
-create.network(n = 100, type = "barabasi", edge.weights = NULL, ...)
+create.network(n = 100, type = "barabasi", edge.weights = NULL, m = 2, p.or.m = (2 * n - 2 * floor(sqrt(n))),...)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -21,6 +21,12 @@ create.network(n = 100, type = "barabasi", edge.weights = NULL, ...)
 }
   \item{edge.weights}{
 %%     ~~Describe \code{edge.weights} here~~
+}
+  \item{m}{
+parameter of barabasi.game().
+}
+  \item{p.or.m}{
+parameter of erdos.renyi.game().
 }
   \item{\dots}{
 %%     ~~Describe \code{\dots} here~~

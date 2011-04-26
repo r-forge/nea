@@ -9,7 +9,7 @@ Distances on graph
 Distances on graphs
 }
 \usage{
-dist.graph(g, method = "shortest.paths", v=V(g), correctInf = TRUE, ...)
+dist.graph(g, method=c("shortest.paths","diffusion"), v=V(g), correctInf = TRUE, ...)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
