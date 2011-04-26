@@ -15,12 +15,12 @@ create.grid <- function(n=100){
 } # end function create.grid
 
 ## main function:
-create.network <- function(n=100,type="barabasi", edge.weights=NULL,...){
+create.network <- function(n=100,type="barabasi", edge.weights=NULL, m=2,p.or.m=(2*n-2*floor(sqrt(n))), ...){
 	if(!type%in%c("barabasi","erdos.renyi","grid")) stop("Input 'type' unknown: Stop feeding me crap!")
-	##
+  ##
 	g <- switch(type,
-		barabasi    = barabasi.game(n,m=2,directed=FALSE, ...),
-		erdos.renyi = erdos.renyi.game(n,p.or.m=(2*n-2*floor(sqrt(n))),type="gnm",directed=FALSE,...), ## ~nr of edges of grid
+		barabasi    = barabasi.game(n,m=m,directed=FALSE, ...),
+		erdos.renyi = erdos.renyi.game(n,p.or.m=p.or.m,type="gnm",directed=FALSE,...), ## ~nr of edges of grid
 		grid        = create.grid(n)	
 		)
 	##
